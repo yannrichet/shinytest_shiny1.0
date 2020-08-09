@@ -27,7 +27,7 @@ expect_pass <- function(object, info = NULL) {
   diff_txt <- ""
 
   if (!all_pass) {
-    diff_txt <- textTestDiff(object$appDir, fail_names, object$preprocess)
+    diff_txt <- textTestDiff(object$appDir, fail_names, object$images)
   }
 
   testthat::expect(

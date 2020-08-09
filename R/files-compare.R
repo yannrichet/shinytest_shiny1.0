@@ -8,13 +8,11 @@ files_identical <- function(a, b, preprocess = NULL) {
     return(FALSE)
   }
 
-  if (is.null(preprocess)) { # if preprocess is here, size diff is no longer sufficient to return FALSE
-    # Fast path: if not the same size, return FALSE
-    a_size <- file.info(a)$size
-    b_size <- file.info(b)$size
-    if (!identical(a_size, b_size)) {
-      return(FALSE)
-    }
+  # Fast path: if not the same size, return FALSE
+  a_size <- file.info(a)$size
+  b_size <- file.info(b)$size
+  if (!identical(a_size, b_size)) {
+    return(FALSE)
   }
 
   a_content <- read_raw(a)
@@ -32,7 +30,7 @@ files_identical <- function(a, b, preprocess = NULL) {
 # function that takes two arguments, `name` (a filename) and `content` (a raw
 # vector of the file's contents). If present, the `file_preprocess` function
 # will be used to prepare file contents before they are compared.
-dirs_differ <- function(expected, current, preprocess = NULL) {
+dirs_differ <- function(expected, current, file_preprocess = NULL) {
   diff_found <- FALSE
 
   if (!dir_exists(expected)) stop("Directory ", expected, " not found.")
@@ -54,9 +52,8 @@ dirs_differ <- function(expected, current, preprocess = NULL) {
     )
 
     if (res$expected && res$current) {
-      res$identical <- files_identical(expected_file, current_file, preprocess)
+      res$identical <- files_identical(expected_file, current_file, file_preprocess)
     } else {
-      warning("Missing files: ",ifelse(res$expected,"expected ",""),ifelse(res$current,"current",""))
       res$identical <- NA
     }
     res
@@ -96,22 +93,8 @@ which_diff <- function() {
 #
 # If present, the `file_preprocess` function will be used to prepare file
 # contents before they are compared.
-diff_files <- function(file1, file2, preprocess = NULL) {
+diff_files <- function(file1, file2, file_preprocess = NULL) {
   diff_prog <- which_diff()
-
-  if (!is.null(preprocess)) {
-    file_preprocess <- function(filename) {
-      if (grepl("\\.png$", filename)) {
-        unlink(filename)
-      } else if (grepl("\\.json$", filename)) {
-        content <- read_raw(filename)
-        content <- raw_to_utf8(preprocess(filename,content))
-        writeChar(content, filename, eos = NULL)
-      }
-      filename
-    }
-  } else
-    file_preprocess = NULL
 
   tmp_dir <- tempfile("shinytest-diff-")
   dir.create(tmp_dir)
