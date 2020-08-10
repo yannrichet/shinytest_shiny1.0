@@ -125,7 +125,7 @@ testApp("myshinyapp", "mytest")
 
 This will play back the interactions and record snapshots, as specified in the test script. The very first time the tests are run, they will be saved in a subdirectory of the app called `tests/mytest-expected`. These are the expected results, and future test runs will be compared against them.
 
-The directory will contain two files for each snapshot. For example:
+The directory will contain two files for each snapshot. For exmaple:
 
 ```
 001.json
@@ -230,6 +230,9 @@ When you run `testApp("path/to/app")`, it will run all the tests scripts in the 
 Shinytest can be used with [interactive R markdown documents](http://rmarkdown.rstudio.com/authoring_shiny.html) that use `runtime: shiny` (sometimes also referred to as Shiny documents). This includes those that use the [flexdashboard](http://rmarkdown.rstudio.com/flexdashboard/) package.
 
 Shiny documents have some differences compared to regular Shiny applications, and so the tests are slightly different. For an example of an interactive Rmd with tests, see [here](https://github.com/rstudio/shinytest/tree/master/tests/testthat/recorded_tests/rmd).
+
+As of this writing testing, Shiny documents should be done with a development version of the rmarkdown package, which can be installed using `devtools::install_github("rstudio/rmarkdown")`. It will be released in the future as rmarkdown 1.7.
+
 
 ### Randomness
 

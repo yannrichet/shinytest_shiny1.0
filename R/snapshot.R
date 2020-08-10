@@ -114,32 +114,30 @@ sd_snapshotDownload <- function(self, private, id, filename) {
 #' @param images Should screenshots and PNG images be compared? It can be useful
 #'   to set this to \code{FALSE} when the expected results were taken on a
 #'   different platform from the current results.
-#' @param suffix An optional suffix for the expected results directory. For
-#'   example, if the suffix is \code{"mac"}, the expected directory would be
-#'   \code{mytest-expected-mac}.
+#' @param normalize_data This will pre-process the JSON content to
+#'   canonicalize it (alphabetical order), so changes of JSON objects order will
+#'   no longer be considered as differences. It can be useful to set
+#'   this to \code{TRUE} when the content of snapshot is quite heavy
+#'   (which means that the snapshooted page may be loaded hieratically).
+#' @param ignore_text This will pre-process the content to ignore text
+#'   matching thess pattern (using gsub to replace it by arbitrary value).
+#' @param ignore_keys This will pre-process the JSON content to remove elements
+#'   matching these key patterns.
 #'
 #' @seealso \code{\link{testApp}}
 #'
 #' @export
-snapshotCompare <- function(
-  appDir,
-  testnames = NULL,
-  autoremove = TRUE,
-  images = TRUE,
-  quiet = FALSE,
-  interactive = base::interactive(),
-  suffix = NULL
-) {
+snapshotCompare <- function(appDir, testnames = NULL, autoremove = TRUE,
+  images = TRUE, normalize_data = FALSE, ignore_keys = NULL, ignore_text = NULL, quiet = FALSE, interactive = base::interactive()) {
 
-  testDir <- findTestsDir(appDir, quiet=TRUE)
   if (is.null(testnames)) {
-    testnames <- all_testnames(testDir, "-current")
+    testnames <- all_testnames(appDir, "-current")
   }
 
   results <- lapply(
     testnames,
     function(testname) {
-      snapshotCompareSingle(appDir, testname, autoremove, quiet, images, interactive, suffix)
+      snapshotCompareSingle(appDir, testname, autoremove, quiet, images, normalize_data, ignore_keys, ignore_text, interactive)
     }
   )
 
@@ -158,26 +156,17 @@ snapshotCompare <- function(
     list(
       appDir = appDir,
       results = results,
-      images = images
+      preprocess = results$preprocess
     ),
     class = "shinytest.results"
   ))
 }
 
-
-snapshotCompareSingle <- function(
-  appDir,
-  testname,
-  autoremove = TRUE,
-  quiet = FALSE,
-  images = TRUE,
-  interactive = base::interactive(),
-  suffix = NULL
-) {
-  testDir <- findTestsDir(appDir, quiet = TRUE)
-  current_dir  <- file.path(testDir, paste0(testname, "-current"))
-  expected_dir <- file.path(testDir, paste0(testname, "-expected"))
-  expected_dir <- paste0(expected_dir, normalize_suffix(suffix))
+snapshotCompareSingle <- function(appDir, testname, autoremove = TRUE,
+  quiet = FALSE, images = TRUE, normalize_data = FALSE, ignore_keys = NULL, ignore_text = NULL, interactive = base::interactive())
+{
+  current_dir  <- file.path(appDir, "tests", paste0(testname, "-current"))
+  expected_dir <- file.path(appDir, "tests", paste0(testname, "-expected"))
 
   # When this function is called from testApp(), this is the way that we get
   # the relative path from the current working dir when testApp() is called.
@@ -193,11 +182,7 @@ snapshotCompareSingle <- function(
 
   if (dir_exists(expected_dir)) {
 
-    if (images) {
-      filter_fun <- NULL
-    } else {
-      filter_fun <- remove_image_hashes_json
-    }
+    filter_fun <- preprocessFilter(images, normalize_data, ignore_keys, ignore_text)
 
     res <- dirs_differ(expected_dir, current_dir, filter_fun)
 
@@ -226,10 +211,10 @@ snapshotCompareSingle <- function(
         )
 
         status[[" "]]     [!res$current]  <- "-"
-        status[["Status"]][!res$current]  <- "Missing in -current"
+        status[["Status"]][!res$current]  <- "Missing in -current/"
 
         status[[" "]]     [!res$expected] <- "+"
-        status[["Status"]][!res$expected] <- "Missing in -expected"
+        status[["Status"]][!res$expected] <- "Missing in -expected/"
 
         # Use which() to ignore NA's
         status[[" "]][which(!res$identical)]      <- "!="
@@ -247,27 +232,21 @@ snapshotCompareSingle <- function(
       if (interactive) {
         response <- readline("Would you like to view the differences between expected and current results [y/n]? ")
         if (tolower(response) == "y") {
-          result <- viewTestDiff(appDir, testname, interactive, suffix = suffix)[[1]]
+          quiet <- TRUE
+          result <- viewTestDiff(appDir, testname, interactive, preprocess = filter_fun)[[1]]
 
           if (result == "accept") {
             snapshot_pass <- TRUE
             snapshot_status <- "updated"
-            quiet <- TRUE
           }
         }
       }
 
       if (!quiet && interactive) {
-
-        if (is.null(suffix) || suffix == "") {
-          suffix_param <- ""
-        } else {
-          suffix_param <- paste0(', suffix="', suffix, '"')
-        }
-        message('\n  To view differences between expected and current results, run:\n',
-                '    viewTestDiff("', relativeAppDir, '", "', testname, '"', suffix_param, ')\n',
+        message('\n  To view all differences between expected and current results, run:\n',
+                '    viewTestDiff("', relativeAppDir, '", "', testname, '")\n',
                 '  To save current results as expected results, run:\n',
-                '    snapshotUpdate("', relativeAppDir, '", "', testname, '"', suffix_param, ')\n')
+                '    snapshotUpdate("', relativeAppDir, '", "', testname, '")\n')
       }
 
     } else {
@@ -289,10 +268,11 @@ snapshotCompareSingle <- function(
               " This is a first run of tests.\n")
     }
 
-    snapshotUpdate(appDir, testname, quiet = quiet, suffix = suffix)
+    snapshotUpdate(appDir, testname, quiet = quiet)
 
     snapshot_pass <- TRUE
     snapshot_status <- "new"
+    filter_fun <- NULL
   }
 
   invisible(list(
@@ -300,44 +280,32 @@ snapshotCompareSingle <- function(
     name = testname,
     pass = snapshot_pass,
     status = snapshot_status,
-    images = images
+    preprocess = filter_fun
   ))
 }
 
 
 #' @rdname snapshotCompare
+#' @inheritParams snapshotCompare
 #' @export
-snapshotUpdate <- function(
-  appDir = ".",
-  testnames = NULL,
-  quiet = FALSE,
-  suffix = NULL
-) {
-  testDir <- findTestsDir(appDir, quiet=TRUE)
+snapshotUpdate <- function(appDir = ".", testnames = NULL, quiet = FALSE) {
   if (is.null(testnames)) {
-    testnames <- all_testnames(testDir, "-current")
+    testnames <- all_testnames(appDir, "-current")
   }
 
   for (testname in testnames) {
-    snapshotUpdateSingle(appDir, testname, quiet, suffix)
+    snapshotUpdateSingle(appDir, testname, quiet)
   }
 }
 
 
-snapshotUpdateSingle <- function(
-  appDir = ".",
-  testname,
-  quiet = FALSE,
-  suffix = NULL
-) {
+snapshotUpdateSingle <- function(appDir = ".", testname, quiet = FALSE) {
   # Strip off trailing slash if present
   testname <- sub("/$", "", testname)
 
-  testDir <- findTestsDir(appDir, quiet=TRUE)
-  base_path <- file.path(testDir, testname)
+  base_path <- file.path(appDir, "tests", testname)
   current_dir  <- paste0(base_path, "-current")
   expected_dir <- paste0(base_path, "-expected")
-  expected_dir <- paste0(expected_dir, normalize_suffix(suffix))
 
   if (!dir_exists(current_dir)) {
     stop("Current result directory not found: ", current_dir)
@@ -441,7 +409,7 @@ hash_snapshot_image_data <- function(data) {
 remove_image_hashes <- function(json) {
   gsub(
     '((^|\\n)\\s*"src":\\s*"\\[image data) sha1: [^]]+\\]"',
-    "\\1]",
+    "\\1]\"",
     json
   )
 }
@@ -457,19 +425,176 @@ remove_image_hashes_json <- function(filename, content) {
   charToRaw(content)
 }
 
-# Given a filename: If it is a PNG file, delete the file. If it is a JSON
-# file, remove the image hashes and overwrite the original file with the new
-# contents. For all other files, do nothing.
-remove_image_hashes_and_files <- function(filename) {
-  if (grepl("\\.png$", filename)) {
-    unlink(filename)
+# Given a filename and contents: if it is a JSON file, sort the content by
+# alphabetical order, and return the new JSON.
+# If it is not a JSON file, return content unchanged.
+normalize_json <- function(filename, content) {
+  if (!grepl("\\.json$", filename))
+    return(content)
 
-  } else if (grepl("\\.json$", filename)) {
-    content <- read_utf8(filename)
-    content <- remove_image_hashes(content)
-    writeChar(content, filename, eos = NULL)
-    filename
+  content <- raw_to_utf8(content)
+  content <- jsonlite::fromJSON(content)
+  content <- order.list(content)
+  content <- jsonlite::toJSON(content,pretty = T,null = 'null',auto_unbox = T)
+  return(charToRaw(content))
+}
+
+
+# Given a filename and contents: if it is a JSON file, empty the content
+# matching these key patterns.
+# If it is not a JSON file, return content unchanged.
+ignore_in_json <- function(filename, content,key_patterns) {
+  if (!grepl("\\.json$", filename))
+    return(content)
+
+  content <- raw_to_utf8(content)
+  content <- jsonlite::fromJSON(content)
+  for (p in key_patterns)
+    content <- clean.list(content,paste0("^",p,"$"))
+  content <- jsonlite::toJSON(content,pretty = T,null = 'null',auto_unbox = T)
+  return(charToRaw(content))
+}
+
+# Sort list names by order (recursively).
+#' @test order.list(list('a'=1,'b'=3,'c'=2))
+#' @test order.list(list('d'=5,'a'=1,'b'=3,'c'=2))
+#' @test order.list(list('d'=list('cc'=1,'bb'=0),'a'=1,'b'=3,'c'=2))
+#' @test order.list(list('d'=c(list('cc'=11,'bb'=10),'aa'),'a'=1,'b'=3,'c'=2))
+#' @test order.list(c(list('cc'=11,'bb'=10),'aa'))
+#' @test order.list(list('d'=c(list('cc'=11,'bb'=10),'aa'),'a'=1,'b'=3,'c'=2))
+#' @test order.list(fromJSON('[{"a":1,"b":2},{"c":3,"aa":4}]'))
+empty.list=jsonlite::fromJSON("{}")
+order.list <- function(l) {
+  if (!is.list(l)) { # we don't want to reorder other object than lists
+    if (length(l)<=1) return(l) # one simple object
+    a = l # an 'array' (or sort-of)
+    for (i in 1:length(a))
+      a[i] = order.list(a[i]) # apply order.list on each element of the array, but do not reorder it
+    return(a)
   }
 
-  filename
+  # ok, now we are sure l is a list...
+  if (is.null(names(l))) return(l)
+  if (length(names(l))==0) return(empty.list)
+
+  l.ordered = list()
+  order_names = order(names(l),na.last = F)
+  if (length(order_names)>0)
+    for (i in 1:length(order_names)) {
+      o = order_names[i]
+      if (isTRUE(o > 0)) {
+        name.o = names(l)[o]
+        if (name.o=="")
+          l.ordered[i] = l[o]
+        else {
+          l.i = l[[name.o]]
+          if (is.list(l.i)) {
+            l.i = order.list(l.i)
+          }
+          l.ordered[[name.o]] = l.i
+        }
+      }
+    }
+
+  return(l.ordered)
+}
+
+clean.list <- function(l,key_to_remove) {
+  if (!is.list(l)) { # we don't want to reorder other object than lists
+    if (length(l)<=1) return(l) # one simple object
+    a = l # an 'array' (or sort-of)
+    for (i in 1:length(a))
+      a[i] = clean.list(a[i],key_to_remove) # apply order.list on each element of the array, but do not reorder it
+    return(a)
+  }
+
+  # ok, now we are sure l is a list...
+  if (is.null(names(l))) return(l)
+  if (length(names(l))==0) return(empty.list)
+
+  l.cleaned = list()
+  if (length(names(l))>0)
+    for (i in 1:length(names(l))) {
+      name.i = names(l)[i]
+      if (name.i=="")
+        l.cleaned[i] = l[i]
+      else {
+        if (all(gregexpr(key_to_remove,name.i)[[1]]<0)){
+          l.i = l[[name.i]]
+          if (is.list(l.i)) {
+            l.i = clean.list(l.i,key_to_remove)
+          }
+          l.cleaned[[name.i]] = l.i
+        } else warning("Will remove key ",name.i," matching ",key_to_remove)
+      }
+    }
+
+  return(l.cleaned)
+}
+
+# Given a filename and contents: if it is a JSON file, fix some content arbitrary
+# and return the new JSON, so this content will be ignored/fixed for later diff.
+# If it is not a JSON file, return content unchanged.
+remove_text <- function(filename, content, patterns) {
+  if (!grepl("\\.json$", filename))
+    return(content)
+
+  content <- raw_to_utf8(content)
+  for (p in patterns){
+    g = gregexpr(p,content)[[1]]
+    if (any(g!=-1)) {
+      reps = sapply(1:length(g),
+                    function(i)
+                      substr(content,g[i],g[i]+attr(g,"match.length")[i]-1))
+      warning("Will ignore content of file ",filename," matching:",p,"\n  ...",paste(reps,collapse = "...\n  "))
+      content <- gsub(pattern=p,replacement = paste0("__",p,"__"),content)
+    } #else warning("No matching ",p," in ",filename)
+  }
+  return(charToRaw(content))
+}
+
+# Process iteratively filters.
+pipe.filters <- function(f1,f2,...) {
+  if (is.null(f1)) return(f2)
+  if (is.null(f2)) return(f1)
+  return( function(filename, content) {
+            return(f2(filename,f1(filename,content),...))
+          }
+  )
+}
+
+#' Build a preprocessing filter to avoid false negatives in tests.Compare current and expected snapshots
+#'
+#' @param images Should screenshots and PNG images be compared? It can be useful
+#'   to set this to \code{FALSE} when the expected results were taken on a
+#'   different platform from the current results.
+#' @param normalize_data This will pre-process the JSON content to
+#'   canonicalize it (alphabetical order), so changes of JSON objects order will
+#'   no longer be considered as differences. It can be useful to set
+#'   this to \code{TRUE} when the content of snapshot is quite heavy
+#'   (which means that the snapshooted page may be loaded hieratically).
+#' @param ignore_text This will pre-process the content to ignore text
+#'   matching thess pattern (using gsub to replace it by arbitrary value).
+#' @param ignore_keys This will pre-process the JSON content to remove elements
+#'   matching these key patterns.
+#' @export
+preprocessFilter <- function(images = TRUE, normalize_data = FALSE, ignore_keys = NULL, ignore_text = NULL) {
+  filter_fun <- NULL
+  if (!images) {
+    filter_fun_old = filter_fun
+    filter_fun <- pipe.filters(filter_fun_old,remove_image_hashes_json)
+  }
+  if (normalize_data) {
+    filter_fun_old2 = filter_fun
+    filter_fun <- pipe.filters(filter_fun_old2,normalize_json)
+  }
+  if (!is.null(ignore_text)) {
+    filter_fun_old3 = filter_fun
+    filter_fun <- pipe.filters(filter_fun_old3,remove_text,ignore_text)
+  }
+  if (!is.null(ignore_keys)) {
+    filter_fun_old4 = filter_fun
+    filter_fun <- pipe.filters(filter_fun_old4,ignore_in_json,ignore_keys)
+  }
+  filter_fun
 }

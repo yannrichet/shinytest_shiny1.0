@@ -3,6 +3,7 @@
 \docType{package}
 \name{shinytest}
 \alias{shinytest}
+\alias{shinytest-package}
 \title{Test Shiny Apps}
 \description{
 Uses a headless browser, driven through 'WebDriver'.

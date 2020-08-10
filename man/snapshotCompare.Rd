@@ -5,17 +5,12 @@
 \alias{snapshotUpdate}
 \title{Compare current and expected snapshots}
 \usage{
-snapshotCompare(
-  appDir,
-  testnames = NULL,
-  autoremove = TRUE,
-  images = TRUE,
-  quiet = FALSE,
-  interactive = base::interactive(),
-  suffix = NULL
-)
+snapshotCompare(appDir, testnames = NULL, autoremove = TRUE,
+  images = TRUE, normalize_data = FALSE, ignore_keys = NULL,
+  ignore_text = NULL, quiet = FALSE,
+  interactive = base::interactive())
 
-snapshotUpdate(appDir = ".", testnames = NULL, quiet = FALSE, suffix = NULL)
+snapshotUpdate(appDir = ".", testnames = NULL, quiet = FALSE)
 }
 \arguments{
 \item{appDir}{Directory that holds the tests for an application. This is the
@@ -30,16 +25,24 @@ the current results be removed automatically? Defaults to TRUE.}
 to set this to \code{FALSE} when the expected results were taken on a
 different platform from the current results.}
 
+\item{normalize_data}{This will pre-process the JSON content to
+canonicalize it (alphabetical order), so changes of JSON objects order will
+no longer be considered as differences. It can be useful to set
+this to \code{TRUE} when the content of snapshot is quite heavy
+(which means that the snapshooted page may be loaded hieratically).}
+
+\item{ignore_keys}{This will pre-process the JSON content to remove elements
+matching these key patterns.}
+
+\item{ignore_text}{This will pre-process the content to ignore text
+matching thess pattern (using gsub to replace it by arbitrary value).}
+
 \item{quiet}{Should output be suppressed? This is useful for automated
 testing.}
 
 \item{interactive}{If there are any differences between current results and
 expected results, provide an interactive graphical viewer that shows the
 changes and allows the user to accept or reject the changes.}
-
-\item{suffix}{An optional suffix for the expected results directory. For
-example, if the suffix is \code{"mac"}, the expected directory would be
-\code{mytest-expected-mac}.}
 }
 \description{
 This compares current and expected snapshots for a test set, and prints any

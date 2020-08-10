@@ -1,11 +1,12 @@
 {
   "input": {
     "bw_adjust": 1,
-    "n_breaks": "20"
+    "n_breaks": "20",
+    "n_breaks-selectized": ""
   },
   "output": {
     "eruptions": {
-      "src": "[image data sha1: 125f812467b73f6e522f643900543f7a8f50a019]",
+      "src": "[image data sha1: cebbfb5a3660a73cf0426844e057c40680785077]",
       "width": 738,
       "height": 626,
       "coordmap": {

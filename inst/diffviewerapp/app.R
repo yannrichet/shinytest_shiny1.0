@@ -1,8 +1,6 @@
 app_dir   <- getOption("shinytest.app.dir")
 test_name <- getOption("shinytest.test.name")
-suffix    <- getOption("shinytest.suffix")
-
-msg_suffix <- shinytest:::normalize_suffix(suffix)
+preprocess <- getOption("shinytest.preprocess")
 
 shinyApp(
   ui = bootstrapPage(
@@ -11,9 +9,7 @@ shinyApp(
     ),
     div(class = "header",
       div(class = "title",
-        paste0(
-          "Differences between expected", msg_suffix,
-          " (old) and current (new) test results for ",
+        paste0("Differences between expected (old) and current (new) test results for ",
           basename(app_dir), ": ", test_name
         )
       ),
@@ -22,29 +18,27 @@ shinyApp(
           span(
             img(src = "exit-save.png", class = "diffviewer-icon"),
             "Update and quit",
-            title = paste0(
-              "Replace the expected", msg_suffix, " results with the current results"
-            )
+            title = "Replace the expected results with the current results"
           )
         ),
         actionLink("reject",
           span(
             img(src = "exit-nosave.png", class = "diffviewer-icon"),
             "Quit",
-            title = paste0("Leave the expected", msg_suffix, " results unchanged")
+            title = "Leave the expected results unchanged"
           )
         )
       )
     ),
     div(
       class = "content",
-      shinytest::viewTestDiffWidget(app_dir, test_name, suffix)
+      shinytest::viewTestDiffWidget(app_dir, test_name, preprocess)
     )
   ),
 
   server = function(input, output) {
     observeEvent(input$accept, {
-      shinytest::snapshotUpdate(app_dir, test_name, suffix = suffix)
+      shinytest::snapshotUpdate(app_dir, test_name)
       stopApp("accept")
     })
 
